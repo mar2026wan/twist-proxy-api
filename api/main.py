@@ -4,7 +4,6 @@ import httpx
 
 app = FastAPI()
 
-# 1. تفعيل CORS للسماح لأي تطبيق بالوصول إلى البروكسي الخاص بك
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,13 +12,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# النطاق الأساسي الخاص بـ Twist Music (الذي يوجه البروكسي الطلبات إليه)
-BASE_TARGET_URL = "https://api.twistmena.com" # قم بتعديله إلى رابط الـ API الأساسي للمنصة
+# الرابط الحقيقي المستخرج من ملف الـ HAR الخاص بك
+BASE_TARGET_URL = "https://api.twistmena.com"
 
-@app.post("/api/api")
+@app.api_route("/api/api", methods=["GET", "POST"])
+@app.api_route("/", methods=["GET", "POST"])
 async def proxy_handler(request: Request):
     try:
-        # استقبال البيانات القادمة من الـ Request (الـ Payload)
         data = await request.json()
         
         path = data.get("path", "")
@@ -27,18 +26,23 @@ async def proxy_handler(request: Request):
         custom_headers = data.get("headers", {})
         body = data.get("body", None)
         
-        # تركيب الرابط النهائي المستهدف
+        if not path.startswith("/"):
+            path = "/" + path
         target_url = f"{BASE_TARGET_URL}{path}"
         
-        # إعداد الـ Headers الافتراضية مع دمج الـ Headers الممررة من المستخدم
+        # الـ Headers الرسمية الحديثة المستخرجة من الحزم غير المشفرة
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            "User-Agent": "Twist-Mobile/11.1.1 (Android; 15; SM-A057F; music; ar-US)",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "platform": "android",
+            "channel": "mobileapp",
+            "app_version": "11.1.1",
+            "appversion": "11.1.1"
         }
         headers.update(custom_headers)
         
-        # إرسال الطلب برمجياً إلى خوادم المنصة باستخدام httpx
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             if method == "GET":
                 response = await client.get(target_url, headers=headers)
             elif method == "POST":
@@ -46,7 +50,6 @@ async def proxy_handler(request: Request):
             else:
                 return Response(content="Method not supported", status_code=400)
             
-            # إعادة النتيجة القادمة من السيرفر الأصلي كما هي للمستخدم
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -54,4 +57,8 @@ async def proxy_handler(request: Request):
             )
             
     except Exception as e:
-        return Response(content=f"{{\"error\": \"{str(e)}\"}}", status_code=500, media_type="application/json")
+        return Response(
+            content=f"{{\"error\": \"Proxy Internal Error\", \"details\": \"{str(e)}\"}}", 
+            status_code=500, 
+            media_type="application/json"
+        )
